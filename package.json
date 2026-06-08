@@ -1,0 +1,37 @@
+{
+  "name": "fit",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlejandraSaldana/fit.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/AlejandraSaldana/fit/issues"
+  },
+  "homepage": "https://github.com/AlejandraSaldana/fit#readme",
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "framer-motion": "^12.40.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "vite": "^8.0.16"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^6.0.3"
+  }
+}

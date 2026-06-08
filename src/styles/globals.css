@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ─────────────────────────────────────── */
+:root {
+  /* spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* shadows — single value only per constraints */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.08);
+
+  /* safe area */
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+/* ── Base resets ───────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  background-color: #FAF9F6;
+  color: #111111;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+}
+
+/* ── Utilities not expressible in Tailwind config ─────── */
+@layer utilities {
+  .pb-safe {
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+
+  .glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+
+  .tab-bar-blur {
+    background: rgba(250, 249, 246, 0.85);
+    backdrop-filter: saturate(180%) blur(24px);
+    -webkit-backdrop-filter: saturate(180%) blur(24px);
+  }
+}
