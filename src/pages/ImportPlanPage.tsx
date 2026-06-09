@@ -48,7 +48,7 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
   const [parseError, setParseError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { progress, importPlan, reset } = useImportPlan(user)
+  const { progress, conflictDates, importPlan, reset, resolveConflict } = useImportPlan(user)
 
   // ── Handlers ─────────────────────────────────────────────────────────────
 
@@ -231,7 +231,63 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
   return (
     <div className="flex flex-col items-center justify-center min-h-[50vh]">
 
-      {progress.phase !== 'done' && progress.phase !== 'error' && (
+      {/* Conflict resolution */}
+      {progress.phase === 'conflict' && (
+        <div className="w-full">
+          <div className="flex flex-col items-center mb-5">
+            <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center mb-3">
+              <span className="text-amber-500 text-xl">⚠</span>
+            </div>
+            <p className="text-sm font-semibold text-ink text-center">Date conflicts found</p>
+            <p className="text-xs text-muted text-center mt-1">
+              {conflictDates.length} existing workout{conflictDates.length !== 1 ? 's' : ''} overlap with this plan
+            </p>
+          </div>
+
+          <div className="space-y-1.5 mb-6 max-h-40 overflow-y-auto scrollbar-hide">
+            {conflictDates.slice(0, 6).map((d) => (
+              <div key={d} className="flex items-center gap-2 text-xs text-muted px-1">
+                <div className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+                {formatDateShort(d)}
+              </div>
+            ))}
+            {conflictDates.length > 6 && (
+              <p className="text-xs text-muted px-1">+{conflictDates.length - 6} more</p>
+            )}
+          </div>
+
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full"
+            onClick={() => resolveConflict('overwrite')}
+          >
+            Replace existing workouts
+          </Button>
+          <Button
+            variant="ghost"
+            size="lg"
+            className="w-full mt-2"
+            onClick={() => resolveConflict('keep_existing')}
+          >
+            Keep existing, skip conflicts
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full mt-2"
+            onClick={() => {
+              reset()
+              setView('preview')
+            }}
+          >
+            Cancel import
+          </Button>
+        </div>
+      )}
+
+      {/* Spinner while inserting */}
+      {progress.phase !== 'done' && progress.phase !== 'error' && progress.phase !== 'conflict' && (
         <>
           <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           <p className="text-sm text-muted text-center mt-4">{progress.message}</p>

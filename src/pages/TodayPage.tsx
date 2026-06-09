@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Moon } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { useTodayWorkout } from '../hooks/useTodayWorkout'
 import { useWhoopRecovery } from '../hooks/useWhoopRecovery'
-import type { Workout, Exercise, WhoopRecovery } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import type { Workout, Exercise, WhoopRecovery, Plan } from '../lib/supabase'
 import { LogWorkoutPage } from './LogWorkoutPage'
 
 // ── Mock data ──────────────────────────────────────────────────────────────
@@ -15,14 +16,6 @@ const MOCK_TODAY = {
   week: 3,
   phase: 'Base Rebuild',
   date: new Date(),
-  goal: {
-    distance: '1km',
-    targetTime: '3:30',
-    currentPB: '3:52',
-    prediction: '3:41',
-    daysUntilTest: 23,
-    completionPct: 34,
-  },
   streak: { current: 6, longest: 11, totalWorkouts: 18, completionRate: 82 },
   whoop: {
     connected: true,
@@ -85,7 +78,7 @@ function toDateStr(d: Date): string {
 
 function getMondayOfWeek(d: Date): Date {
   const date = new Date(d)
-  const day = date.getDay() // 0=Sun, 1=Mon, …6=Sat
+  const day = date.getDay()
   const diff = day === 0 ? -6 : 1 - day
   date.setDate(date.getDate() + diff)
   date.setHours(0, 0, 0, 0)
@@ -152,12 +145,53 @@ function formatDate(d: Date): string {
   return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`
 }
 
+function formatGoalTime(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 const SHORT_DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function recoveryColor(score: number): string {
   if (score >= 70) return 'bg-green-50 text-green-700'
   if (score >= 40) return 'bg-amber-50 text-amber-700'
   return 'bg-red-50 text-red-700'
+}
+
+function workoutTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    gym: 'Gym',
+    run: 'Run',
+    gym_run: 'Gym + Run',
+    time_trial: 'Time Trial',
+    rest: 'Rest',
+    mobility: 'Mobility',
+    recovery: 'Recovery',
+    cross_training: 'Cross Training',
+    intervals: 'Intervals',
+    tempo: 'Tempo Run',
+    long_run: 'Long Run',
+    easy_run: 'Easy Run',
+  }
+  return map[type] ?? type.replace(/_/g, ' ')
+}
+
+function computeGoalProgress(
+  startDate: string,
+  endDate: string,
+): { daysUntilTest: number; completionPct: number } {
+  const today = new Date()
+  const end = new Date(endDate)
+  const start = new Date(startDate)
+  const totalMs = end.getTime() - start.getTime()
+  const elapsedMs = Math.max(0, today.getTime() - start.getTime())
+  const completionPct = totalMs > 0 ? Math.min(100, Math.round((elapsedMs / totalMs) * 100)) : 0
+  const daysUntilTest = Math.max(
+    0,
+    Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
+  )
+  return { daysUntilTest, completionPct }
 }
 
 // ── 1. PageHeader ──────────────────────────────────────────────────────────
@@ -219,38 +253,50 @@ function DaySelector({ weekDates, selectedDate, onSelectDate }: DaySelectorProps
 }
 
 // ── 3. GoalCard ────────────────────────────────────────────────────────────
-function GoalCard() {
-  const { goal } = MOCK_TODAY
+function GoalCard({ plan }: { plan: Plan }) {
+  const { daysUntilTest, completionPct } = computeGoalProgress(
+    plan.start_date ?? '2026-06-10',
+    plan.end_date ?? '2026-08-03',
+  )
+
   return (
     <Card variant="default">
       <div className="flex items-baseline justify-between">
         <p className="text-xs text-muted">Goal</p>
         <p className="text-title font-semibold text-ink">
-          {goal.distance} in {goal.targetTime}
+          {plan.goal ?? 'Fitness Goal'}
         </p>
       </div>
 
       <div className="flex gap-6 mt-4">
-        <div>
-          <p className="text-xs text-muted">Current PB</p>
-          <p className="text-sm font-semibold text-ink mt-0.5">{goal.currentPB}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted">Prediction</p>
-          <p className="text-sm font-semibold text-accent mt-0.5">{goal.prediction}</p>
-        </div>
+        {plan.goal_time_seconds != null && (
+          <div>
+            <p className="text-xs text-muted">Target</p>
+            <p className="text-sm font-semibold text-accent mt-0.5">
+              {formatGoalTime(plan.goal_time_seconds)}
+            </p>
+          </div>
+        )}
+        {plan.current_pb_seconds != null && (
+          <div>
+            <p className="text-xs text-muted">Current PB</p>
+            <p className="text-sm font-semibold text-ink mt-0.5">
+              {formatGoalTime(plan.current_pb_seconds)}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="mt-4">
         <div className="h-1.5 bg-border rounded-full">
           <div
             className="h-full bg-accent rounded-full transition-all duration-700"
-            style={{ width: `${goal.completionPct}%` }}
+            style={{ width: `${completionPct}%` }}
           />
         </div>
         <div className="flex justify-between mt-2">
-          <p className="text-xs text-muted">{goal.daysUntilTest} days until test</p>
-          <p className="text-xs text-accent">{goal.completionPct}% complete</p>
+          <p className="text-xs text-muted">{daysUntilTest} days until test</p>
+          <p className="text-xs text-accent">{completionPct}% complete</p>
         </div>
       </div>
     </Card>
@@ -300,17 +346,19 @@ function WhoopRecoveryCard({ displayRecovery }: { displayRecovery: DisplayRecove
 function WorkoutCard({
   displayWorkout,
   onStart,
+  isFuture,
+  selectedDate,
 }: {
   displayWorkout: DisplayWorkout
   onStart: () => void
+  isFuture: boolean
+  selectedDate: Date
 }) {
-  const typeLabel = displayWorkout.type === 'gym' ? 'Gym + Run' : displayWorkout.type
-
   return (
     <Card variant="default" className="shadow-card-hover">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold bg-border text-muted rounded-full px-3 py-1">
-          {typeLabel}
+          {workoutTypeLabel(displayWorkout.type)}
         </span>
         <span className="text-xs text-muted">{displayWorkout.durationMins} min</span>
       </div>
@@ -321,9 +369,20 @@ function WorkoutCard({
         <p className="text-sm text-muted italic">{displayWorkout.coachNote}</p>
       </div>
 
-      <Button variant="primary" size="lg" className="w-full mt-5" onClick={onStart}>
-        Start Workout
+      <Button
+        variant={isFuture ? 'ghost' : 'primary'}
+        size="lg"
+        className="w-full mt-5"
+        onClick={onStart}
+        disabled={isFuture}
+      >
+        {isFuture ? 'Scheduled' : 'Start Workout'}
       </Button>
+      {isFuture && (
+        <p className="text-xs text-muted text-center mt-2">
+          Available on {formatDate(selectedDate)}
+        </p>
+      )}
     </Card>
   )
 }
@@ -331,6 +390,66 @@ function WorkoutCard({
 // ── 5a. WorkoutSkeleton ────────────────────────────────────────────────────
 function WorkoutSkeleton() {
   return <div className="bg-border rounded-2xl h-40 animate-pulse" />
+}
+
+// ── 5b. RestDayCard ────────────────────────────────────────────────────────
+function RestDayCard({
+  selectedDate,
+  previousWorkoutName,
+}: {
+  selectedDate: Date
+  previousWorkoutName: string | null
+}) {
+  const REST_MESSAGES = [
+    previousWorkoutName
+      ? `You put in the work with ${previousWorkoutName}. The couch is your training partner today.`
+      : 'Nothing on the schedule today. The couch is your training partner.',
+    'Recovery is where adaptation happens. Trust the rest.',
+    previousWorkoutName
+      ? `After ${previousWorkoutName}, your legs have earned this.`
+      : 'Legs up. Body adapting. This is part of the plan.',
+    'Champions are built on rest days, not despite them.',
+    'Sleep more. Eat well. The training will be there tomorrow.',
+    previousWorkoutName
+      ? `You showed up for ${previousWorkoutName}. Let your body absorb it.`
+      : 'Active recovery counts. A walk, a stretch — keep it light.',
+    'No workout today. But you can prep your kit for tomorrow.',
+    "Rest is not weakness. It's the other half of training.",
+    'Foam roll, hydrate, sleep. Repeat.',
+    'The best athletes in the world prioritise rest. So should you.',
+    previousWorkoutName
+      ? `${previousWorkoutName} was real work. Today's work is to recover.`
+      : 'Easy day. Your nervous system will thank you.',
+    'Patience is a training skill. Practice it today.',
+  ]
+
+  const dayOfYear = Math.floor(
+    (selectedDate.getTime() - new Date(selectedDate.getFullYear(), 0, 0).getTime()) /
+      (1000 * 60 * 60 * 24),
+  )
+  const message = REST_MESSAGES[dayOfYear % REST_MESSAGES.length]
+
+  return (
+    <Card variant="default">
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-2xl bg-border flex items-center justify-center flex-shrink-0">
+          <Moon size={18} className="text-muted" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-ink">Rest Day</p>
+          <p className="text-xs text-muted mt-0.5">{formatDate(selectedDate)}</p>
+        </div>
+      </div>
+
+      <p className="text-sm text-muted mt-4">{message}</p>
+
+      <div className="border-t border-border mt-4 pt-4">
+        <p className="text-xs text-muted">
+          {previousWorkoutName ? `Yesterday: ${previousWorkoutName}` : 'Back at it tomorrow.'}
+        </p>
+      </div>
+    </Card>
+  )
 }
 
 // ── 6. ExerciseList ────────────────────────────────────────────────────────
@@ -487,6 +606,22 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
   const [showLogSheet, setShowLogSheet] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
 
+  // Active plan — fetched fresh on every mount (tab switch remounts this component)
+  const [activePlan, setActivePlan] = useState<Plan | null | undefined>(undefined)
+
+  useEffect(() => {
+    supabase
+      .from('plans')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        setActivePlan((data as Plan[] | null)?.[0] ?? null)
+      })
+  }, [user.id])
+
   useEffect(() => {
     onLogSheetChange?.(showLogSheet)
   }, [showLogSheet, onLogSheetChange])
@@ -496,6 +631,12 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
     toDateStr(selectedDate),
     refreshKey,
   )
+
+  // Yesterday's workout for the RestDayCard message
+  const yesterdayDate = new Date(selectedDate)
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+  const { workout: yesterdayWorkout } = useTodayWorkout(user.id, toDateStr(yesterdayDate))
+
   const { recovery } = useWhoopRecovery(user.id)
 
   const displayWorkout: DisplayWorkout =
@@ -508,6 +649,9 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
       ? toDisplayRecovery(recovery)
       : MOCK_TODAY.whoop
 
+  const todayStr = toDateStr(new Date())
+  const isFuture = toDateStr(selectedDate) > todayStr
+
   return (
     <div className="space-y-4">
       <PageHeader selectedDate={selectedDate} />
@@ -516,35 +660,54 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
         selectedDate={selectedDate}
         onSelectDate={setSelectedDate}
       />
-      <GoalCard />
-      <WhoopRecoveryCard displayRecovery={displayRecovery} />
+
+      {/* Workout section — before WHOOP */}
       {workoutLoading ? (
         <WorkoutSkeleton />
+      ) : workout === null ? (
+        <RestDayCard
+          selectedDate={selectedDate}
+          previousWorkoutName={yesterdayWorkout?.name ?? null}
+        />
       ) : (
         <>
-          <WorkoutCard displayWorkout={displayWorkout} onStart={() => setShowLogSheet(true)} />
-          <ExerciseList exercises={displayWorkout.exercises} />
-          <RunSection />
+          <WorkoutCard
+            displayWorkout={displayWorkout}
+            onStart={() => setShowLogSheet(true)}
+            isFuture={isFuture}
+            selectedDate={selectedDate}
+          />
+          {displayWorkout.exercises.length > 0 && (
+            <ExerciseList exercises={displayWorkout.exercises} />
+          )}
+          {['run', 'gym_run', 'time_trial'].includes(workout.type) && <RunSection />}
         </>
       )}
+
+      {/* Goal card — only shown when there is an active plan */}
+      {activePlan != null && <GoalCard plan={activePlan} />}
+
+      <WhoopRecoveryCard displayRecovery={displayRecovery} />
       <BottomCards />
 
-      <LogWorkoutPage
-        isOpen={showLogSheet}
-        onClose={() => setShowLogSheet(false)}
-        onComplete={() => {
-          setShowLogSheet(false)
-          setRefreshKey((k) => k + 1)
-        }}
-        user={user}
-        workout={{
-          id: workout?.id ?? 'demo',
-          name: displayWorkout.name,
-          type: displayWorkout.type,
-          exercises: displayWorkout.exercises,
-          run: MOCK_TODAY.workout.run,
-        }}
-      />
+      {workout && (
+        <LogWorkoutPage
+          isOpen={showLogSheet}
+          onClose={() => setShowLogSheet(false)}
+          onComplete={() => {
+            setShowLogSheet(false)
+            setRefreshKey((k) => k + 1)
+          }}
+          user={user}
+          workout={{
+            id: workout.id,
+            name: displayWorkout.name,
+            type: displayWorkout.type,
+            exercises: displayWorkout.exercises,
+            run: MOCK_TODAY.workout.run,
+          }}
+        />
+      )}
     </div>
   )
 }

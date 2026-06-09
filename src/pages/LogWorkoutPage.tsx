@@ -34,6 +34,8 @@ interface LogWorkoutPageProps {
   }
 }
 
+type StepKey = 'exercises' | 'run' | 'reflection'
+
 type SetData = { weight: number; reps: number }
 type ExerciseSets = Record<string, Record<number, SetData>>
 
@@ -47,6 +49,12 @@ type ReflectionState = {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+const stepTitles: Record<StepKey, string> = {
+  exercises: 'Log Exercises',
+  run: 'Log Run',
+  reflection: 'How did it go?',
+}
+
 function formatPace(totalSeconds: number, distanceKm: number): string {
   if (distanceKm <= 0 || !isFinite(totalSeconds / distanceKm)) return '--:--'
   const paceSeconds = Math.round(totalSeconds / distanceKm)
@@ -77,25 +85,18 @@ export function LogWorkoutPage({
   workout,
 }: LogWorkoutPageProps) {
   // ── Derived config ───────────────────────────────────────────────────────
+  const hasExercises = workout.exercises.length > 0
   const hasRun = workout.run != null
-  const totalSteps = hasRun ? 3 : 2
 
-  // Step numbering: 1 = exercises, 2 = run (if hasRun), 3 = reflection
-  // With no run: step 1 → step 3 (skip 2)
-  function getDotIndex(s: number): number {
-    if (s === 1) return 0
-    if (s === 2) return 1          // only reachable when hasRun
-    return hasRun ? 2 : 1          // step 3
-  }
+  const steps: StepKey[] = []
+  if (hasExercises) steps.push('exercises')
+  if (hasRun) steps.push('run')
+  steps.push('reflection')
 
-  const stepTitles: Record<number, string> = {
-    1: 'Log Exercises',
-    2: 'Log Run',
-    3: 'How did it go?',
-  }
+  const totalSteps = steps.length
 
   // ── State ────────────────────────────────────────────────────────────────
-  const [step, setStep] = useState(1)
+  const [stepIndex, setStepIndex] = useState(0)
   const [exerciseSets, setExerciseSets] = useState<ExerciseSets>(() =>
     initExerciseSets(workout.exercises),
   )
@@ -114,10 +115,12 @@ export function LogWorkoutPage({
   const [submitting, setSubmitting] = useState(false)
   const [showComplete, setShowComplete] = useState(false)
 
-  // Reset to step 1 each time the sheet opens
+  const currentStep: StepKey = steps[stepIndex] ?? 'reflection'
+
+  // Reset to first step each time the sheet opens
   useEffect(() => {
     if (isOpen) {
-      setStep(1)
+      setStepIndex(0)
       setError(null)
       setSubmitting(false)
       setShowComplete(false)
@@ -149,11 +152,7 @@ export function LogWorkoutPage({
   }
 
   function nextStep() {
-    setStep((s) => {
-      if (s === 1) return hasRun ? 2 : 3
-      if (s === 2) return 3
-      return s
-    })
+    setStepIndex((i) => (i < steps.length - 1 ? i + 1 : i))
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -225,7 +224,7 @@ export function LogWorkoutPage({
       await db.from('exercise_sets').insert(setsArray)
     }
 
-    // 4. Insert run result (only if run step was shown and has valid data)
+    // 4. Insert run result (only if run step was in the flow and has valid data)
     if (hasRun && runDistance > 0 && runMinutes > 0) {
       const durationSeconds = Math.round(runMinutes * 60)
       const runResult = runResultSchema.safeParse({
@@ -259,11 +258,9 @@ export function LogWorkoutPage({
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
-  const dotIndex = getDotIndex(step)
-
   return (
     <>
-      <BottomSheet isOpen={isOpen} onClose={onClose} title={stepTitles[step]}>
+      <BottomSheet isOpen={isOpen} onClose={onClose} title={stepTitles[currentStep]}>
 
         {/* Step indicator */}
         <div className="flex justify-center gap-1.5 mb-5">
@@ -271,14 +268,14 @@ export function LogWorkoutPage({
             <div
               key={i}
               className={`w-1.5 h-1.5 rounded-full transition-colors duration-200 ${
-                i === dotIndex ? 'bg-accent' : 'bg-border'
+                i === stepIndex ? 'bg-accent' : 'bg-border'
               }`}
             />
           ))}
         </div>
 
-        {/* ── Step 1: Exercises ─────────────────────────────────────────────── */}
-        {step === 1 && (
+        {/* ── exercises step ─────────────────────────────────────────────── */}
+        {currentStep === 'exercises' && (
           <div className="space-y-6 pb-2">
             {workout.exercises.map((ex) => (
               <div key={ex.id}>
@@ -324,8 +321,8 @@ export function LogWorkoutPage({
           </div>
         )}
 
-        {/* ── Step 2: Run ───────────────────────────────────────────────────── */}
-        {step === 2 && hasRun && workout.run && (
+        {/* ── run step ───────────────────────────────────────────────────── */}
+        {currentStep === 'run' && workout.run && (
           <div className="space-y-5 pb-2">
             {/* Target info */}
             <div className="flex gap-6">
@@ -383,8 +380,8 @@ export function LogWorkoutPage({
           </div>
         )}
 
-        {/* ── Step 3: Reflection ────────────────────────────────────────────── */}
-        {step === 3 && (
+        {/* ── reflection step ─────────────────────────────────────────────── */}
+        {currentStep === 'reflection' && (
           <div className="space-y-5 pb-2">
             <RPESlider label="Effort"             value={reflection.rpe}    onChange={(v) => updateReflection('rpe', v)}    />
             <RPESlider label="Energy"             value={reflection.energy} onChange={(v) => updateReflection('energy', v)} />

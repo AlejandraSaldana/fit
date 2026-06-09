@@ -35,6 +35,7 @@ export function PlanManagementPage({ user, onPlanChange }: PlanManagementPagePro
   const [plans, setPlans] = useState<Plan[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [showImporter, setShowImporter] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,6 +45,7 @@ export function PlanManagementPage({ user, onPlanChange }: PlanManagementPagePro
       .from('plans')
       .select('*')
       .eq('user_id', user.id)
+      .neq('status', 'deleted')
       .order('created_at', { ascending: false })
 
     if (err) {
@@ -65,17 +67,25 @@ export function PlanManagementPage({ user, onPlanChange }: PlanManagementPagePro
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db = supabase as unknown as { from: (t: string) => any }
 
-    const { error: err } = await db
+    // Soft delete the plan to preserve FK references from workout_sessions
+    const { error: planErr } = await db
       .from('plans')
-      .delete()
+      .update({ status: 'deleted' })
       .eq('id', planId)
       .eq('user_id', user.id)
 
-    if (err) {
-      setError((err as { message: string }).message)
+    if (planErr) {
+      setError((planErr as { message: string }).message)
       setDeletingId(null)
       return
     }
+
+    // Cancel planned workouts so they no longer appear on the Today view
+    await db
+      .from('workouts')
+      .update({ status: 'cancelled' })
+      .eq('plan_id', planId)
+      .eq('status', 'planned')
 
     await loadPlans()
     onPlanChange()
@@ -92,6 +102,7 @@ export function PlanManagementPage({ user, onPlanChange }: PlanManagementPagePro
       .from('plans')
       .update({ status: 'inactive' })
       .eq('user_id', user.id)
+      .neq('status', 'deleted')
 
     if (err1) {
       setError((err1 as { message: string }).message)
@@ -180,17 +191,47 @@ export function PlanManagementPage({ user, onPlanChange }: PlanManagementPagePro
                 <div className="flex-shrink-0 pt-0.5">
                   {deletingId === plan.id ? (
                     <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                  ) : (
+                  ) : confirmDeleteId !== plan.id ? (
                     <Trash2
                       size={16}
                       className="text-muted cursor-pointer"
-                      onClick={() => handleDelete(plan.id)}
+                      onClick={() => setConfirmDeleteId(plan.id)}
                     />
-                  )}
+                  ) : null}
                 </div>
               </div>
 
-              {plan.status !== 'active' && (
+              {/* Inline delete confirmation */}
+              {confirmDeleteId === plan.id && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  <p className="text-xs text-muted mb-2">
+                    Delete this plan? Workouts linked to it will be removed from your schedule.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setConfirmDeleteId(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex-1 text-danger"
+                      onClick={() => {
+                        setConfirmDeleteId(null)
+                        void handleDelete(plan.id)
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {plan.status !== 'active' && confirmDeleteId !== plan.id && (
                 <Button
                   variant="ghost"
                   size="sm"

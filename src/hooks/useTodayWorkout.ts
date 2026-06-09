@@ -15,6 +15,8 @@ export function useTodayWorkout(userId: string, date: string, refreshKey?: numbe
 
     async function load() {
       setLoading(true)
+
+      // Fetch the workout for this date
       const { data, error: err } = await supabase
         .from('workouts')
         .select(`
@@ -38,11 +40,32 @@ export function useTodayWorkout(userId: string, date: string, refreshKey?: numbe
       if (!data) {
         setWorkout(null)
         setExercises([])
-      } else {
-        const row = data as WorkoutWithExercises
-        setWorkout(row)
-        setExercises(row.exercises ?? [])
+        setLoading(false)
+        return
       }
+
+      const row = data as WorkoutWithExercises
+
+      // Verify the parent plan is still active — guards against workouts
+      // that belong to deleted or inactive plans showing on the Today view
+      const { data: planData } = await supabase
+        .from('plans')
+        .select('status')
+        .eq('id', row.plan_id)
+        .maybeSingle()
+
+      if (!mounted) return
+
+      const planStatus = (planData as { status: string } | null)?.status
+      if (planStatus !== 'active') {
+        setWorkout(null)
+        setExercises([])
+        setLoading(false)
+        return
+      }
+
+      setWorkout(row)
+      setExercises(row.exercises ?? [])
       setLoading(false)
     }
 

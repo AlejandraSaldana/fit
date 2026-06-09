@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { ParsedPlan, ParsedWorkout } from '../lib/parsePlan'
@@ -12,6 +12,7 @@ export interface ImportProgress {
     | 'inserting_phases'
     | 'inserting_workouts'
     | 'inserting_exercises'
+    | 'conflict'
     | 'done'
     | 'error'
   message: string
@@ -32,12 +33,20 @@ const INITIAL_PROGRESS: ImportProgress = {
 
 export function useImportPlan(user: User) {
   const [progress, setProgress] = useState<ImportProgress>(INITIAL_PROGRESS)
+  const [conflictDates, setConflictDates] = useState<string[]>([])
+  const lastPlanRef = useRef<ParsedPlan | null>(null)
 
   function reset() {
     setProgress(INITIAL_PROGRESS)
+    setConflictDates([])
   }
 
-  async function importPlan(plan: ParsedPlan): Promise<void> {
+  async function importPlan(
+    plan: ParsedPlan,
+    conflictResolution?: 'keep_existing' | 'overwrite',
+  ): Promise<void> {
+    lastPlanRef.current = plan
+
     // Our Database type omits Update/Relationships fields that supabase-js v2
     // generics require for write operations — cast for the write path only.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,6 +69,43 @@ export function useImportPlan(user: User) {
         error: `A plan named "${plan.name}" already exists. Delete it first.`,
       })
       return
+    }
+
+    // ── Step 1.5: Conflict detection ──────────────────────────────────────
+    const newDates = plan.phases.flatMap((p) => p.workouts.map((w) => w.scheduled_date))
+
+    const { data: conflictData } = await supabase
+      .from('workouts')
+      .select('scheduled_date')
+      .eq('user_id', user.id)
+      .eq('status', 'planned')
+      .in('scheduled_date', newDates)
+
+    const conflicts = Array.from(
+      new Set(
+        ((conflictData ?? []) as Array<{ scheduled_date: string }>).map((w) => w.scheduled_date),
+      ),
+    )
+
+    if (conflicts.length > 0 && !conflictResolution) {
+      setConflictDates(conflicts)
+      setProgress({
+        phase: 'conflict',
+        message: `${conflicts.length} date${conflicts.length !== 1 ? 's' : ''} already have workouts scheduled.`,
+        workoutsInserted: 0,
+        totalWorkouts: 0,
+        error: null,
+      })
+      return
+    }
+
+    if (conflictResolution === 'overwrite' && conflicts.length > 0) {
+      await db
+        .from('workouts')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('status', 'planned')
+        .in('scheduled_date', conflicts)
     }
 
     // ── Step 2: Insert plan ───────────────────────────────────────────────
@@ -141,7 +187,14 @@ export function useImportPlan(user: User) {
     }
 
     // ── Step 4: Insert workouts ───────────────────────────────────────────
-    const totalWorkouts = plan.phases.reduce((sum, p) => sum + p.workouts.length, 0)
+    const totalWorkouts = plan.phases.reduce(
+      (sum, p) =>
+        sum +
+        p.workouts.filter(
+          (w) => !(conflictResolution === 'keep_existing' && conflicts.includes(w.scheduled_date)),
+        ).length,
+      0,
+    )
 
     setProgress({
       phase: 'inserting_workouts',
@@ -157,6 +210,10 @@ export function useImportPlan(user: User) {
     for (const phase of plan.phases) {
       const phaseId = phaseIdMap[phase.order_index]
       for (const workout of phase.workouts) {
+        if (conflictResolution === 'keep_existing' && conflicts.includes(workout.scheduled_date)) {
+          continue
+        }
+
         const { data: rawWorkout, error: workoutErr } = await db
           .from('workouts')
           .insert({
@@ -212,18 +269,16 @@ export function useImportPlan(user: User) {
     })
 
     for (const { workout, id: workoutId } of workoutIdMap) {
-      const { error: exErr } = await db
-        .from('exercises')
-        .insert(
-          workout.exercises.map((ex) => ({
-            workout_id: workoutId,
-            name: ex.name,
-            order_index: ex.order_index,
-            sets: ex.sets,
-            reps: ex.reps,
-            target_weight_kg: ex.target_weight_kg,
-          })),
-        )
+      const { error: exErr } = await db.from('exercises').insert(
+        workout.exercises.map((ex) => ({
+          workout_id: workoutId,
+          name: ex.name,
+          order_index: ex.order_index,
+          sets: ex.sets,
+          reps: ex.reps,
+          target_weight_kg: ex.target_weight_kg,
+        })),
+      )
 
       const exError = exErr as { message: string } | null
       if (exError) {
@@ -248,5 +303,10 @@ export function useImportPlan(user: User) {
     })
   }
 
-  return { progress, importPlan, reset }
+  function resolveConflict(resolution: 'keep_existing' | 'overwrite') {
+    setConflictDates([])
+    void importPlan(lastPlanRef.current!, resolution)
+  }
+
+  return { progress, conflictDates, importPlan, reset, resolveConflict }
 }
