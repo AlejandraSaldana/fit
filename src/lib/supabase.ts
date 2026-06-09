@@ -290,4 +290,10 @@ export type PersonalRecordInsert = Tables['personal_records']['Insert']
 const supabaseUrl  = import.meta.env.VITE_SUPABASE_URL  as string
 const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
+if (!supabaseUrl || !supabaseAnon) {
+  throw new Error(
+    'Missing Supabase environment variables. Copy .env.example to .env.local and fill in your keys.'
+  )
+}
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnon)

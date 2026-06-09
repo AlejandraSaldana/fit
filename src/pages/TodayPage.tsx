@@ -1,9 +1,13 @@
 import { useState } from 'react'
+import type { User } from '@supabase/supabase-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProgressRing } from '../components/ui/ProgressRing'
+import { useTodayWorkout } from '../hooks/useTodayWorkout'
+import { useWhoopRecovery } from '../hooks/useWhoopRecovery'
+import type { Workout, Exercise, WhoopRecovery } from '../lib/supabase'
 
 // ── Mock data ──────────────────────────────────────────────────────────────
 const MOCK_TODAY = {
@@ -50,6 +54,68 @@ const MOCK_TODAY = {
   },
 }
 
+// ── Display types ──────────────────────────────────────────────────────────
+type DisplayExercise = { id: string; name: string; sets: number; reps: number; targetWeight: number }
+
+type DisplayWorkout = {
+  name: string
+  durationMins: number
+  type: string
+  coachNote: string
+  exercises: DisplayExercise[]
+  run: typeof MOCK_TODAY.workout.run
+}
+
+type DisplayRecovery = {
+  connected: boolean
+  recoveryScore: number
+  sleepPerformance: number
+  hrv: number
+  restingHR: number
+  strain: number
+  status: string
+}
+
+// ── Adapters ───────────────────────────────────────────────────────────────
+function toDisplayWorkout(w: Workout, exs: Exercise[]): DisplayWorkout {
+  return {
+    name: w.name,
+    durationMins: w.duration_mins ?? 60,
+    type: w.type,
+    coachNote: w.coach_note ?? '',
+    exercises: exs.map((ex) => ({
+      id: ex.id,
+      name: ex.name,
+      sets: ex.sets ?? 0,
+      reps: ex.reps ?? 0,
+      targetWeight:
+        ex.target_weight_kg != null
+          ? Math.round(Number(ex.target_weight_kg) * 2.20462)
+          : 0,
+    })),
+    run: MOCK_TODAY.workout.run,
+  }
+}
+
+function recoveryStatusLabel(score: number): string {
+  if (score >= 70) return 'Normal Training'
+  if (score >= 40) return 'Light Training'
+  return 'Rest Day'
+}
+
+function toDisplayRecovery(r: WhoopRecovery): DisplayRecovery {
+  const score = r.recovery_score ?? 0
+  return {
+    connected: true,
+    recoveryScore: score,
+    sleepPerformance: r.sleep_performance ?? 0,
+    hrv: r.hrv_ms != null ? Math.round(Number(r.hrv_ms)) : 0,
+    restingHR: r.resting_hr ?? 0,
+    strain: r.strain_score != null ? Number(r.strain_score) : 0,
+    status: recoveryStatusLabel(score),
+  }
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -62,7 +128,6 @@ function formatDate(d: Date): string {
   return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`
 }
 
-// JS getDay() returns 0=Sun…6=Sat; convert to 0=Mon index
 function todayMondayIndex(d: Date): number {
   return (d.getDay() + 6) % 7
 }
@@ -164,39 +229,38 @@ function GoalCard() {
 }
 
 // ── 4. WhoopRecoveryCard ───────────────────────────────────────────────────
-function WhoopRecoveryCard() {
-  const { whoop } = MOCK_TODAY
-  if (!whoop.connected) return null
+function WhoopRecoveryCard({ displayRecovery }: { displayRecovery: DisplayRecovery }) {
+  if (!displayRecovery.connected) return null
 
   return (
     <Card variant="default">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted">Recovery</p>
         <span
-          className={`text-xs font-semibold px-2.5 py-1 rounded-full ${recoveryColor(whoop.recoveryScore)}`}
+          className={`text-xs font-semibold px-2.5 py-1 rounded-full ${recoveryColor(displayRecovery.recoveryScore)}`}
         >
-          {whoop.status}
+          {displayRecovery.status}
         </span>
       </div>
 
-      <p className="text-title font-bold text-ink mt-1">{whoop.recoveryScore}</p>
+      <p className="text-title font-bold text-ink mt-1">{displayRecovery.recoveryScore}</p>
 
       <div className="grid grid-cols-2 gap-3 mt-4">
         <div>
           <p className="text-xs text-muted">Sleep</p>
-          <p className="text-sm font-semibold text-ink">{whoop.sleepPerformance}%</p>
+          <p className="text-sm font-semibold text-ink">{displayRecovery.sleepPerformance}%</p>
         </div>
         <div>
           <p className="text-xs text-muted">HRV</p>
-          <p className="text-sm font-semibold text-ink">{whoop.hrv}ms</p>
+          <p className="text-sm font-semibold text-ink">{displayRecovery.hrv}ms</p>
         </div>
         <div>
           <p className="text-xs text-muted">Resting HR</p>
-          <p className="text-sm font-semibold text-ink">{whoop.restingHR}bpm</p>
+          <p className="text-sm font-semibold text-ink">{displayRecovery.restingHR}bpm</p>
         </div>
         <div>
           <p className="text-xs text-muted">Strain</p>
-          <p className="text-sm font-semibold text-ink">{whoop.strain}</p>
+          <p className="text-sm font-semibold text-ink">{displayRecovery.strain}</p>
         </div>
       </div>
     </Card>
@@ -204,9 +268,8 @@ function WhoopRecoveryCard() {
 }
 
 // ── 5. WorkoutCard ─────────────────────────────────────────────────────────
-function WorkoutCard() {
-  const { workout } = MOCK_TODAY
-  const typeLabel = workout.type === 'gym' ? 'Gym + Run' : workout.type
+function WorkoutCard({ displayWorkout }: { displayWorkout: DisplayWorkout }) {
+  const typeLabel = displayWorkout.type === 'gym' ? 'Gym + Run' : displayWorkout.type
 
   return (
     <Card variant="default" className="shadow-card-hover">
@@ -214,13 +277,13 @@ function WorkoutCard() {
         <span className="text-xs font-semibold bg-border text-muted rounded-full px-3 py-1">
           {typeLabel}
         </span>
-        <span className="text-xs text-muted">{workout.durationMins} min</span>
+        <span className="text-xs text-muted">{displayWorkout.durationMins} min</span>
       </div>
 
-      <p className="text-title font-semibold text-ink mt-3">{workout.name}</p>
+      <p className="text-title font-semibold text-ink mt-3">{displayWorkout.name}</p>
 
       <div className="border-l-2 border-accent pl-3 mt-3">
-        <p className="text-sm text-muted italic">{workout.coachNote}</p>
+        <p className="text-sm text-muted italic">{displayWorkout.coachNote}</p>
       </div>
 
       <Button variant="primary" size="lg" className="w-full mt-5">
@@ -230,8 +293,13 @@ function WorkoutCard() {
   )
 }
 
+// ── 5a. WorkoutSkeleton (shown while loading) ──────────────────────────────
+function WorkoutSkeleton() {
+  return <div className="bg-border rounded-2xl h-40 animate-pulse" />
+}
+
 // ── 6. ExerciseList ────────────────────────────────────────────────────────
-function ExerciseList() {
+function ExerciseList({ exercises }: { exercises: typeof MOCK_TODAY.workout.exercises }) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
 
   function toggle(id: string) {
@@ -245,7 +313,7 @@ function ExerciseList() {
   return (
     <div className="space-y-2">
       <p className="text-xs font-semibold uppercase tracking-wider text-muted">Exercises</p>
-      {MOCK_TODAY.workout.exercises.map((ex) => {
+      {exercises.map((ex) => {
         const expanded = expandedIds.has(ex.id)
         return (
           <Card
@@ -363,16 +431,39 @@ function BottomCards() {
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
-export function TodayPage() {
+interface TodayPageProps {
+  user: User
+}
+
+export function TodayPage({ user }: TodayPageProps) {
+  const { workout, exercises, loading: workoutLoading } = useTodayWorkout(user.id)
+  const { recovery } = useWhoopRecovery(user.id)
+
+  const displayWorkout: DisplayWorkout =
+    workout != null
+      ? toDisplayWorkout(workout, exercises)
+      : MOCK_TODAY.workout
+
+  const displayRecovery: DisplayRecovery =
+    recovery != null
+      ? toDisplayRecovery(recovery)
+      : MOCK_TODAY.whoop
+
   return (
     <div className="space-y-4">
       <PageHeader />
       <DaySelector />
       <GoalCard />
-      <WhoopRecoveryCard />
-      <WorkoutCard />
-      <ExerciseList />
-      <RunSection />
+      <WhoopRecoveryCard displayRecovery={displayRecovery} />
+      {workoutLoading ? (
+        <WorkoutSkeleton />
+      ) : (
+        <>
+          <WorkoutCard displayWorkout={displayWorkout} />
+          <ExerciseList exercises={displayWorkout.exercises} />
+          <RunSection />
+        </>
+      )}
       <BottomCards />
     </div>
   )
