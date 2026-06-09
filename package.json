@@ -19,6 +19,9 @@
     "url": "https://github.com/AlejandraSaldana/fit/issues"
   },
   "homepage": "https://github.com/AlejandraSaldana/fit#readme",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.0",
     "@vitejs/plugin-react": "^6.0.2",
