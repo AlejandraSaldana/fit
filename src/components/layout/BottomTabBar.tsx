@@ -14,9 +14,7 @@ interface BottomTabBarProps {
 
 export function BottomTabBar({ tabs, activeKey, onTabChange }: BottomTabBarProps) {
   return (
-    // outer wrapper: positions bar + adds safe-area padding beneath it
     <div className="fixed bottom-0 inset-x-0 z-50 pb-safe pointer-events-none">
-      {/* floating pill */}
       <div className="pointer-events-auto mx-4 mb-3 rounded-2xl tab-bar-blur border border-border shadow-card">
         <nav className="flex items-stretch h-16">
           {tabs.map((tab) => {
@@ -46,9 +44,6 @@ export function BottomTabBar({ tabs, activeKey, onTabChange }: BottomTabBarProps
                 >
                   {tab.label}
                 </span>
-                {active && (
-                  <span className="absolute bottom-2.5 w-1 h-1 rounded-full bg-accent" />
-                )}
               </button>
             )
           })}

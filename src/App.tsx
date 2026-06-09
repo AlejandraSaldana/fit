@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Home, Calendar, Activity, User } from 'lucide-react'
 import { BottomTabBar, TabItem } from './components/layout/BottomTabBar'
 import { TodayPage } from './pages/TodayPage'
 import { AuthPage } from './pages/AuthPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { PlanManagementPage } from './pages/PlanManagementPage'
 import { useAuth } from './hooks/useAuth'
+import { supabase } from './lib/supabase'
 
 const TABS: TabItem[] = [
   { key: 'today',    label: 'Today',    Icon: Home },
@@ -25,6 +27,27 @@ export function App() {
   const { user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState('today')
   const [isLogSheetOpen, setIsLogSheetOpen] = useState(false)
+  const [planCount, setPlanCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    const u = user
+    if (!u) return
+    supabase
+      .from('plans')
+      .select('id')
+      .eq('user_id', u.id)
+      .then(({ data }) => setPlanCount(data?.length ?? 0))
+  }, [user])
+
+  function refreshPlans() {
+    const u = user
+    if (!u) return
+    supabase
+      .from('plans')
+      .select('id')
+      .eq('user_id', u.id)
+      .then(({ data }) => setPlanCount(data?.length ?? 0))
+  }
 
   if (loading) {
     return (
@@ -46,7 +69,20 @@ export function App() {
       >
         {activeTab === 'today'    && <TodayPage user={user} onLogSheetChange={setIsLogSheetOpen} />}
         {activeTab === 'calendar' && <Placeholder label="Calendar" />}
-        {activeTab === 'plan'     && <Placeholder label="Plan" />}
+        {activeTab === 'plan'     && (
+          planCount === null
+            ? (
+              <div className="flex items-center justify-center min-h-[50vh]">
+                <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+              </div>
+            )
+            : (
+              <PlanManagementPage
+                user={user}
+                onPlanChange={refreshPlans}
+              />
+            )
+        )}
         {activeTab === 'profile'  && <ProfilePage user={user} />}
       </div>
 

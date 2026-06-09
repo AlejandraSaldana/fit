@@ -4,14 +4,7 @@ import type { Workout, Exercise } from '../lib/supabase'
 
 type WorkoutWithExercises = Workout & { exercises: Exercise[] }
 
-function toDateString(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-export function useTodayWorkout(userId: string, refreshKey?: number) {
+export function useTodayWorkout(userId: string, date: string, refreshKey?: number) {
   const [workout, setWorkout] = useState<Workout | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [loading, setLoading] = useState(true)
@@ -19,7 +12,6 @@ export function useTodayWorkout(userId: string, refreshKey?: number) {
 
   useEffect(() => {
     let mounted = true
-    const today = toDateString(new Date())
 
     async function load() {
       setLoading(true)
@@ -30,7 +22,7 @@ export function useTodayWorkout(userId: string, refreshKey?: number) {
           exercises ( * )
         `)
         .eq('user_id', userId)
-        .eq('scheduled_date', today)
+        .eq('scheduled_date', date)
         .eq('status', 'planned')
         .order('order_index', { referencedTable: 'exercises', ascending: true })
         .maybeSingle()
@@ -56,7 +48,7 @@ export function useTodayWorkout(userId: string, refreshKey?: number) {
 
     load()
     return () => { mounted = false }
-  }, [userId, refreshKey])
+  }, [userId, date, refreshKey])
 
   return { workout, exercises, loading, error }
 }

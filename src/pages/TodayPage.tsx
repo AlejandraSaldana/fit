@@ -77,6 +77,30 @@ type DisplayRecovery = {
   status: string
 }
 
+// ── Date helpers ───────────────────────────────────────────────────────────
+
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function getMondayOfWeek(d: Date): Date {
+  const date = new Date(d)
+  const day = date.getDay() // 0=Sun, 1=Mon, …6=Sat
+  const diff = day === 0 ? -6 : 1 - day
+  date.setDate(date.getDate() + diff)
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function getWeekDates(anchor: Date): Date[] {
+  const monday = getMondayOfWeek(anchor)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return d
+  })
+}
+
 // ── Adapters ───────────────────────────────────────────────────────────────
 function toDisplayWorkout(w: Workout, exs: Exercise[]): DisplayWorkout {
   return {
@@ -117,8 +141,7 @@ function toDisplayRecovery(r: WhoopRecovery): DisplayRecovery {
   }
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+// ── Display helpers ────────────────────────────────────────────────────────
 
 function formatDate(d: Date): string {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -129,9 +152,7 @@ function formatDate(d: Date): string {
   return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`
 }
 
-function todayMondayIndex(d: Date): number {
-  return (d.getDay() + 6) % 7
-}
+const SHORT_DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 function recoveryColor(score: number): string {
   if (score >= 70) return 'bg-green-50 text-green-700'
@@ -140,12 +161,12 @@ function recoveryColor(score: number): string {
 }
 
 // ── 1. PageHeader ──────────────────────────────────────────────────────────
-function PageHeader() {
+function PageHeader({ selectedDate }: { selectedDate: Date }) {
   return (
     <div>
       <p className="text-xs uppercase tracking-wider text-muted">Week {MOCK_TODAY.week}</p>
       <h1 className="text-title font-semibold text-ink mt-0.5">
-        {formatDate(MOCK_TODAY.date)}
+        {formatDate(selectedDate)}
       </h1>
       <p className="text-xs text-muted mt-0.5">{MOCK_TODAY.phase}</p>
     </div>
@@ -153,18 +174,25 @@ function PageHeader() {
 }
 
 // ── 2. DaySelector ─────────────────────────────────────────────────────────
-function DaySelector() {
-  const [selected, setSelected] = useState(todayMondayIndex(MOCK_TODAY.date))
+interface DaySelectorProps {
+  weekDates: Date[]
+  selectedDate: Date
+  onSelectDate: (date: Date) => void
+}
+
+function DaySelector({ weekDates, selectedDate, onSelectDate }: DaySelectorProps) {
+  const selectedStr = toDateStr(selectedDate)
 
   return (
     <div className="overflow-x-auto scrollbar-hide -mx-5 px-5">
       <div className="flex gap-1 w-max">
-        {DAY_LABELS.map((label, i) => {
-          const active = i === selected
+        {weekDates.map((date, i) => {
+          const dateStr = toDateStr(date)
+          const active = dateStr === selectedStr
           return (
             <button
-              key={label}
-              onClick={() => setSelected(i)}
+              key={dateStr}
+              onClick={() => onSelectDate(date)}
               className="relative flex items-center justify-center cursor-pointer select-none focus-visible:outline-none"
             >
               {active && (
@@ -180,7 +208,7 @@ function DaySelector() {
                   active ? 'text-white' : 'text-muted',
                 ].join(' ')}
               >
-                {label}
+                {SHORT_DAY[i]}
               </span>
             </button>
           )
@@ -300,7 +328,7 @@ function WorkoutCard({
   )
 }
 
-// ── 5a. WorkoutSkeleton (shown while loading) ──────────────────────────────
+// ── 5a. WorkoutSkeleton ────────────────────────────────────────────────────
 function WorkoutSkeleton() {
   return <div className="bg-border rounded-2xl h-40 animate-pulse" />
 }
@@ -444,14 +472,30 @@ interface TodayPageProps {
 }
 
 export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
+  // Anchor: start of plan (Jun 10) if today is before it, otherwise today
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    return new Date() < new Date('2026-06-10')
+      ? new Date('2026-06-10')
+      : new Date()
+  })
+
+  const anchorDate = new Date() < new Date('2026-06-10')
+    ? new Date('2026-06-10')
+    : new Date()
+  const weekDates = getWeekDates(anchorDate)
+
   const [showLogSheet, setShowLogSheet] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     onLogSheetChange?.(showLogSheet)
   }, [showLogSheet, onLogSheetChange])
-  const [refreshKey, setRefreshKey] = useState(0)
 
-  const { workout, exercises, loading: workoutLoading } = useTodayWorkout(user.id, refreshKey)
+  const { workout, exercises, loading: workoutLoading } = useTodayWorkout(
+    user.id,
+    toDateStr(selectedDate),
+    refreshKey,
+  )
   const { recovery } = useWhoopRecovery(user.id)
 
   const displayWorkout: DisplayWorkout =
@@ -466,8 +510,12 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
 
   return (
     <div className="space-y-4">
-      <PageHeader />
-      <DaySelector />
+      <PageHeader selectedDate={selectedDate} />
+      <DaySelector
+        weekDates={weekDates}
+        selectedDate={selectedDate}
+        onSelectDate={setSelectedDate}
+      />
       <GoalCard />
       <WhoopRecoveryCard displayRecovery={displayRecovery} />
       {workoutLoading ? (
