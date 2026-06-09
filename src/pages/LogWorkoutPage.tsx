@@ -6,6 +6,7 @@ import { Button } from '../components/ui/Button'
 import { supabase } from '../lib/supabase'
 import type { ExerciseSetInsert } from '../lib/supabase'
 import { runResultSchema, recoveryReflectionSchema, sanitizeText } from '../lib/validation'
+import { WorkoutCompletePage } from './WorkoutCompletePage'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface LogWorkoutPageProps {
@@ -76,7 +77,7 @@ export function LogWorkoutPage({
   workout,
 }: LogWorkoutPageProps) {
   // ── Derived config ───────────────────────────────────────────────────────
-  const hasRun = workout.run != null && workout.type.includes('run')
+  const hasRun = workout.run != null
   const totalSteps = hasRun ? 3 : 2
 
   // Step numbering: 1 = exercises, 2 = run (if hasRun), 3 = reflection
@@ -111,6 +112,7 @@ export function LogWorkoutPage({
   })
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [showComplete, setShowComplete] = useState(false)
 
   // Reset to step 1 each time the sheet opens
   useEffect(() => {
@@ -118,6 +120,7 @@ export function LogWorkoutPage({
       setStep(1)
       setError(null)
       setSubmitting(false)
+      setShowComplete(false)
       setExerciseSets(initExerciseSets(workout.exercises))
     }
   }, [isOpen]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -252,167 +255,185 @@ export function LogWorkoutPage({
       .eq('user_id', user.id)
 
     setSubmitting(false)
-    onComplete()
+    setShowComplete(true)
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const dotIndex = getDotIndex(step)
 
   return (
-    <BottomSheet isOpen={isOpen} onClose={onClose} title={stepTitles[step]}>
+    <>
+      <BottomSheet isOpen={isOpen} onClose={onClose} title={stepTitles[step]}>
 
-      {/* Step indicator */}
-      <div className="flex justify-center gap-1.5 mb-5">
-        {Array.from({ length: totalSteps }, (_, i) => (
-          <div
-            key={i}
-            className={`w-1.5 h-1.5 rounded-full transition-colors duration-200 ${
-              i === dotIndex ? 'bg-accent' : 'bg-border'
-            }`}
-          />
-        ))}
-      </div>
+        {/* Step indicator */}
+        <div className="flex justify-center gap-1.5 mb-5">
+          {Array.from({ length: totalSteps }, (_, i) => (
+            <div
+              key={i}
+              className={`w-1.5 h-1.5 rounded-full transition-colors duration-200 ${
+                i === dotIndex ? 'bg-accent' : 'bg-border'
+              }`}
+            />
+          ))}
+        </div>
 
-      {/* ── Step 1: Exercises ─────────────────────────────────────────────── */}
-      {step === 1 && (
-        <div className="space-y-6 pb-2">
-          {workout.exercises.map((ex) => (
-            <div key={ex.id}>
-              <p className="text-sm font-semibold text-ink mb-3">{ex.name}</p>
-              <div className="space-y-2">
-                {Array.from({ length: ex.sets }, (_, i) => i + 1).map((setNum) => {
-                  const setData = exerciseSets[ex.id]?.[setNum]
-                  return (
-                    <div key={setNum} className="flex items-center gap-3">
-                      <p className="text-xs text-muted" style={{ minWidth: 40 }}>
-                        Set {setNum}
-                      </p>
-                      <input
-                        type="number"
-                        value={setData?.weight ?? ex.targetWeight}
-                        onChange={(e) =>
-                          updateSet(ex.id, setNum, 'weight', Number(e.target.value))
-                        }
-                        className="w-16 text-center text-sm border border-border rounded-xl h-10 bg-bg focus:outline-none focus:border-accent"
-                        aria-label={`${ex.name} set ${setNum} weight`}
-                      />
-                      <span className="text-xs text-muted">lb</span>
-                      <input
-                        type="number"
-                        value={setData?.reps ?? ex.reps}
-                        onChange={(e) =>
-                          updateSet(ex.id, setNum, 'reps', Number(e.target.value))
-                        }
-                        className="w-16 text-center text-sm border border-border rounded-xl h-10 bg-bg focus:outline-none focus:border-accent"
-                        aria-label={`${ex.name} set ${setNum} reps`}
-                      />
-                      <span className="text-xs text-muted">reps</span>
-                    </div>
-                  )
-                })}
+        {/* ── Step 1: Exercises ─────────────────────────────────────────────── */}
+        {step === 1 && (
+          <div className="space-y-6 pb-2">
+            {workout.exercises.map((ex) => (
+              <div key={ex.id}>
+                <p className="text-sm font-semibold text-ink mb-3">{ex.name}</p>
+                <div className="space-y-2">
+                  {Array.from({ length: ex.sets }, (_, i) => i + 1).map((setNum) => {
+                    const setData = exerciseSets[ex.id]?.[setNum]
+                    return (
+                      <div key={setNum} className="flex items-center gap-3">
+                        <p className="text-xs text-muted" style={{ minWidth: 40 }}>
+                          Set {setNum}
+                        </p>
+                        <input
+                          type="number"
+                          value={setData?.weight ?? ex.targetWeight}
+                          onChange={(e) =>
+                            updateSet(ex.id, setNum, 'weight', Number(e.target.value))
+                          }
+                          className="w-16 text-center text-sm border border-border rounded-xl h-10 bg-bg focus:outline-none focus:border-accent"
+                          aria-label={`${ex.name} set ${setNum} weight`}
+                        />
+                        <span className="text-xs text-muted">lb</span>
+                        <input
+                          type="number"
+                          value={setData?.reps ?? ex.reps}
+                          onChange={(e) =>
+                            updateSet(ex.id, setNum, 'reps', Number(e.target.value))
+                          }
+                          className="w-16 text-center text-sm border border-border rounded-xl h-10 bg-bg focus:outline-none focus:border-accent"
+                          aria-label={`${ex.name} set ${setNum} reps`}
+                        />
+                        <span className="text-xs text-muted">reps</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+
+            <Button variant="primary" size="lg" className="w-full mt-2" onClick={nextStep}>
+              Next
+            </Button>
+          </div>
+        )}
+
+        {/* ── Step 2: Run ───────────────────────────────────────────────────── */}
+        {step === 2 && hasRun && workout.run && (
+          <div className="space-y-5 pb-2">
+            {/* Target info */}
+            <div className="flex gap-6">
+              <div>
+                <p className="text-xs text-muted">Target distance</p>
+                <p className="text-sm font-semibold text-ink mt-0.5">{workout.run.distance}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted">Target pace</p>
+                <p className="text-sm font-semibold text-ink mt-0.5">{workout.run.paceTarget}</p>
               </div>
             </div>
-          ))}
 
-          <Button variant="primary" size="lg" className="w-full mt-2" onClick={nextStep}>
-            Next
-          </Button>
-        </div>
-      )}
-
-      {/* ── Step 2: Run ───────────────────────────────────────────────────── */}
-      {step === 2 && hasRun && workout.run && (
-        <div className="space-y-5 pb-2">
-          {/* Target info */}
-          <div className="flex gap-6">
+            {/* Distance */}
             <div>
-              <p className="text-xs text-muted">Target distance</p>
-              <p className="text-sm font-semibold text-ink mt-0.5">{workout.run.distance}</p>
+              <p className="text-sm text-ink mb-1">Distance (km)</p>
+              <input
+                type="number"
+                step="0.01"
+                value={runDistance}
+                onChange={(e) => setRunDistance(Number(e.target.value))}
+                className="w-full text-sm border border-border rounded-xl h-10 bg-bg px-4 focus:outline-none focus:border-accent"
+              />
             </div>
+
+            {/* Time */}
             <div>
-              <p className="text-xs text-muted">Target pace</p>
-              <p className="text-sm font-semibold text-ink mt-0.5">{workout.run.paceTarget}</p>
+              <p className="text-sm text-ink mb-1">Time (minutes)</p>
+              <input
+                type="number"
+                step="0.1"
+                value={runMinutes}
+                onChange={(e) => setRunMinutes(Number(e.target.value))}
+                className="w-full text-sm border border-border rounded-xl h-10 bg-bg px-4 focus:outline-none focus:border-accent"
+              />
             </div>
-          </div>
 
-          {/* Distance */}
-          <div>
-            <p className="text-sm text-ink mb-1">Distance (km)</p>
-            <input
-              type="number"
-              step="0.01"
-              value={runDistance}
-              onChange={(e) => setRunDistance(Number(e.target.value))}
-              className="w-full text-sm border border-border rounded-xl h-10 bg-bg px-4 focus:outline-none focus:border-accent"
+            {/* Computed pace (read-only) */}
+            <div>
+              <p className="text-xs text-muted">Average pace</p>
+              <p className="text-sm font-semibold text-ink mt-0.5">
+                {formatPace(runMinutes * 60, runDistance)} /km
+              </p>
+            </div>
+
+            <RPESlider
+              label="How hard was it?"
+              value={runRpe}
+              onChange={setRunRpe}
             />
-          </div>
 
-          {/* Time */}
-          <div>
-            <p className="text-sm text-ink mb-1">Time (minutes)</p>
-            <input
-              type="number"
-              step="0.1"
-              value={runMinutes}
-              onChange={(e) => setRunMinutes(Number(e.target.value))}
-              className="w-full text-sm border border-border rounded-xl h-10 bg-bg px-4 focus:outline-none focus:border-accent"
+            <Button variant="primary" size="lg" className="w-full mt-2" onClick={nextStep}>
+              Next
+            </Button>
+          </div>
+        )}
+
+        {/* ── Step 3: Reflection ────────────────────────────────────────────── */}
+        {step === 3 && (
+          <div className="space-y-5 pb-2">
+            <RPESlider label="Effort"             value={reflection.rpe}    onChange={(v) => updateReflection('rpe', v)}    />
+            <RPESlider label="Energy"             value={reflection.energy} onChange={(v) => updateReflection('energy', v)} />
+            <RPESlider label="Mood"               value={reflection.mood}   onChange={(v) => updateReflection('mood', v)}   />
+            <RPESlider label="Sleep last night"   value={reflection.sleep}  onChange={(v) => updateReflection('sleep', v)}  />
+            <RPESlider label="Pain / discomfort"  value={reflection.pain}   onChange={(v) => updateReflection('pain', v)}   min={1} max={10} />
+
+            <textarea
+              value={reflection.notes}
+              placeholder="Anything to note about today's session..."
+              onChange={(e) => updateReflection('notes', sanitizeText(e.target.value))}
+              className="w-full border border-border rounded-xl bg-bg px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:border-accent resize-none h-24"
             />
+
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              onClick={handleComplete}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                'Complete Workout'
+              )}
+            </Button>
+
+            {error && <p className="text-xs text-danger mt-2">{error}</p>}
           </div>
+        )}
 
-          {/* Computed pace (read-only) */}
-          <div>
-            <p className="text-xs text-muted">Average pace</p>
-            <p className="text-sm font-semibold text-ink mt-0.5">
-              {formatPace(runMinutes * 60, runDistance)} /km
-            </p>
-          </div>
+      </BottomSheet>
 
-          <RPESlider
-            label="How hard was it?"
-            value={runRpe}
-            onChange={setRunRpe}
-          />
-
-          <Button variant="primary" size="lg" className="w-full mt-2" onClick={nextStep}>
-            Next
-          </Button>
-        </div>
-      )}
-
-      {/* ── Step 3: Reflection ────────────────────────────────────────────── */}
-      {step === 3 && (
-        <div className="space-y-5 pb-2">
-          <RPESlider label="Effort"             value={reflection.rpe}    onChange={(v) => updateReflection('rpe', v)}    />
-          <RPESlider label="Energy"             value={reflection.energy} onChange={(v) => updateReflection('energy', v)} />
-          <RPESlider label="Mood"               value={reflection.mood}   onChange={(v) => updateReflection('mood', v)}   />
-          <RPESlider label="Sleep last night"   value={reflection.sleep}  onChange={(v) => updateReflection('sleep', v)}  />
-          <RPESlider label="Pain / discomfort"  value={reflection.pain}   onChange={(v) => updateReflection('pain', v)}   min={1} max={10} />
-
-          <textarea
-            value={reflection.notes}
-            placeholder="Anything to note about today's session..."
-            onChange={(e) => updateReflection('notes', sanitizeText(e.target.value))}
-            className="w-full border border-border rounded-xl bg-bg px-4 py-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:border-accent resize-none h-24"
-          />
-
-          <Button
-            variant="primary"
-            size="lg"
-            className="w-full"
-            onClick={handleComplete}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              'Complete Workout'
-            )}
-          </Button>
-
-          {error && <p className="text-xs text-danger mt-2">{error}</p>}
-        </div>
-      )}
-
-    </BottomSheet>
+      <WorkoutCompletePage
+        isVisible={showComplete}
+        onDismiss={() => {
+          setShowComplete(false)
+          onComplete()
+        }}
+        workoutName={workout.name}
+        stats={{
+          streak: 7,
+          daysUntilGoal: 23,
+          completionPct: 34,
+          weeklyWorkouts: 3,
+          weeklyTarget: 5,
+        }}
+      />
+    </>
   )
 }

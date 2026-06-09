@@ -494,7 +494,7 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
           name: displayWorkout.name,
           type: displayWorkout.type,
           exercises: displayWorkout.exercises,
-          run: displayWorkout.run ?? null,
+          run: MOCK_TODAY.workout.run,
         }}
       />
     </div>

@@ -3,6 +3,7 @@ import { Home, Calendar, Activity, User } from 'lucide-react'
 import { BottomTabBar, TabItem } from './components/layout/BottomTabBar'
 import { TodayPage } from './pages/TodayPage'
 import { AuthPage } from './pages/AuthPage'
+import { ProfilePage } from './pages/ProfilePage'
 import { useAuth } from './hooks/useAuth'
 
 const TABS: TabItem[] = [
@@ -46,7 +47,7 @@ export function App() {
         {activeTab === 'today'    && <TodayPage user={user} onLogSheetChange={setIsLogSheetOpen} />}
         {activeTab === 'calendar' && <Placeholder label="Calendar" />}
         {activeTab === 'plan'     && <Placeholder label="Plan" />}
-        {activeTab === 'profile'  && <Placeholder label="Profile" />}
+        {activeTab === 'profile'  && <ProfilePage user={user} />}
       </div>
 
       {!isLogSheetOpen && (
