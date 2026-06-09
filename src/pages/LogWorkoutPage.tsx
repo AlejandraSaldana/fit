@@ -32,6 +32,13 @@ interface LogWorkoutPageProps {
       paceTarget: string
     } | null
   }
+  stats: {
+    streak: number
+    daysUntilGoal: number
+    completionPct: number
+    weeklyWorkouts: number
+    weeklyTarget: number
+  }
 }
 
 type StepKey = 'exercises' | 'run' | 'reflection'
@@ -83,6 +90,7 @@ export function LogWorkoutPage({
   onComplete,
   user,
   workout,
+  stats,
 }: LogWorkoutPageProps) {
   // ── Derived config ───────────────────────────────────────────────────────
   const hasExercises = workout.exercises.length > 0
@@ -423,13 +431,7 @@ export function LogWorkoutPage({
           onComplete()
         }}
         workoutName={workout.name}
-        stats={{
-          streak: 7,
-          daysUntilGoal: 23,
-          completionPct: 34,
-          weeklyWorkouts: 3,
-          weeklyTarget: 5,
-        }}
+        stats={stats}
       />
     </>
   )

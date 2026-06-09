@@ -30,6 +30,12 @@ function formatGoalTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function parseGoalTimeStr(str: string): number | null {
+  const match = str.trim().match(/^(\d+):([0-5]\d)$/)
+  if (!match) return null
+  return parseInt(match[1], 10) * 60 + parseInt(match[2], 10)
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 interface ImportPlanPageProps {
@@ -46,6 +52,7 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
   const [markdownText, setMarkdownText] = useState('')
   const [parsedPlan, setParsedPlan] = useState<ParsedPlan | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [goalTimeStr, setGoalTimeStr] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const { progress, conflictDates, importPlan, reset, resolveConflict } = useImportPlan(user)
@@ -68,6 +75,7 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
     try {
       const plan = parsePlan(markdownText)
       setParsedPlan(plan)
+      setGoalTimeStr(plan.goal_time_seconds > 0 ? formatGoalTime(plan.goal_time_seconds) : '')
       setParseError(null)
       setView('preview')
     } catch (e) {
@@ -77,8 +85,14 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
 
   function handleImport() {
     if (!parsedPlan) return
+    // Apply any edited goal time before importing
+    const parsedSecs = parseGoalTimeStr(goalTimeStr)
+    const finalPlan: ParsedPlan =
+      parsedSecs !== null && parsedSecs !== parsedPlan.goal_time_seconds
+        ? { ...parsedPlan, goal_time_seconds: parsedSecs }
+        : parsedPlan
     setView('importing')
-    void importPlan(parsedPlan)
+    void importPlan(finalPlan)
   }
 
   // ── VIEW: paste ───────────────────────────────────────────────────────────
@@ -151,6 +165,7 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
   // ── VIEW: preview ─────────────────────────────────────────────────────────
   if (view === 'preview' && parsedPlan) {
     const totalWorkouts = parsedPlan.phases.reduce((s, p) => s + p.workouts.length, 0)
+    const goalTimeInvalid = goalTimeStr.trim() !== '' && parseGoalTimeStr(goalTimeStr) === null
 
     return (
       <div>
@@ -161,20 +176,55 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
           </Button>
         </div>
 
-        {/* Plan summary */}
-        <Card variant="default" className="mt-4">
-          <p className="text-sm font-semibold text-ink">{parsedPlan.name}</p>
-          {parsedPlan.goal && (
-            <p className="text-xs text-muted mt-1">{parsedPlan.goal}</p>
-          )}
-          <p className="text-xs text-muted mt-1">
-            {formatDateRange(parsedPlan.start_date, parsedPlan.end_date)}
-          </p>
-          {parsedPlan.goal_time_seconds > 0 && (
-            <p className="text-xs text-accent mt-1">
-              Target: {formatGoalTime(parsedPlan.goal_time_seconds)}
-            </p>
-          )}
+        {/* Plan details — editable */}
+        <Card variant="default" className="mt-4 space-y-4">
+          <div>
+            <p className="text-xs text-muted mb-1">Plan name</p>
+            <input
+              type="text"
+              value={parsedPlan.name}
+              onChange={(e) =>
+                setParsedPlan((p) => (p ? { ...p, name: e.target.value } : p))
+              }
+              className="w-full text-sm font-semibold border border-border rounded-xl h-10 bg-bg px-3 focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs text-muted mb-1">Goal</p>
+            <input
+              type="text"
+              value={parsedPlan.goal}
+              onChange={(e) =>
+                setParsedPlan((p) => (p ? { ...p, goal: e.target.value } : p))
+              }
+              className="w-full text-sm border border-border rounded-xl h-10 bg-bg px-3 focus:outline-none focus:border-accent"
+            />
+          </div>
+
+          <div className="flex gap-4 items-end">
+            <div>
+              <p className="text-xs text-muted mb-1">Target time (m:ss)</p>
+              <input
+                type="text"
+                value={goalTimeStr}
+                onChange={(e) => setGoalTimeStr(e.target.value)}
+                placeholder="3:30"
+                className={`w-24 text-sm border rounded-xl h-10 bg-bg px-3 focus:outline-none ${
+                  goalTimeInvalid ? 'border-danger text-danger' : 'border-border focus:border-accent text-accent'
+                }`}
+              />
+              {goalTimeInvalid && (
+                <p className="text-xs text-danger mt-1">Use m:ss format</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-muted mb-1">Dates</p>
+              <p className="text-sm text-muted leading-10">
+                {formatDateRange(parsedPlan.start_date, parsedPlan.end_date)}
+              </p>
+            </div>
+          </div>
         </Card>
 
         {/* Phases list */}
@@ -220,6 +270,7 @@ export function ImportPlanPage({ user, onImportComplete }: ImportPlanPageProps) 
           size="lg"
           className="w-full mt-6"
           onClick={handleImport}
+          disabled={!parsedPlan.name.trim() || goalTimeInvalid}
         >
           Import Plan
         </Button>

@@ -58,6 +58,7 @@ export function useImportPlan(user: User) {
       .select('id')
       .eq('user_id', user.id)
       .eq('name', plan.name)
+      .neq('status', 'deleted')
       .maybeSingle()
 
     if (existing) {

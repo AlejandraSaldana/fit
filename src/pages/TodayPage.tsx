@@ -7,16 +7,13 @@ import { Button } from '../components/ui/Button'
 import { ProgressRing } from '../components/ui/ProgressRing'
 import { useTodayWorkout } from '../hooks/useTodayWorkout'
 import { useWhoopRecovery } from '../hooks/useWhoopRecovery'
+import { useUserStats } from '../hooks/useUserStats'
 import { supabase } from '../lib/supabase'
 import type { Workout, Exercise, WhoopRecovery, Plan } from '../lib/supabase'
 import { LogWorkoutPage } from './LogWorkoutPage'
 
 // ── Mock data ──────────────────────────────────────────────────────────────
 const MOCK_TODAY = {
-  week: 3,
-  phase: 'Base Rebuild',
-  date: new Date(),
-  streak: { current: 6, longest: 11, totalWorkouts: 18, completionRate: 82 },
   whoop: {
     connected: true,
     recoveryScore: 74,
@@ -92,6 +89,13 @@ function getWeekDates(anchor: Date): Date[] {
     d.setDate(monday.getDate() + i)
     return d
   })
+}
+
+function getWeekNumber(startDateStr: string): number {
+  const start = new Date(startDateStr + 'T00:00:00')
+  const today = new Date()
+  const diffDays = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.max(1, Math.floor(diffDays / 7) + 1)
 }
 
 // ── Adapters ───────────────────────────────────────────────────────────────
@@ -195,14 +199,22 @@ function computeGoalProgress(
 }
 
 // ── 1. PageHeader ──────────────────────────────────────────────────────────
-function PageHeader({ selectedDate }: { selectedDate: Date }) {
+function PageHeader({
+  selectedDate,
+  weekNumber,
+  phaseName,
+}: {
+  selectedDate: Date
+  weekNumber: number
+  phaseName: string
+}) {
   return (
     <div>
-      <p className="text-xs uppercase tracking-wider text-muted">Week {MOCK_TODAY.week}</p>
+      <p className="text-xs uppercase tracking-wider text-muted">Week {weekNumber}</p>
       <h1 className="text-title font-semibold text-ink mt-0.5">
         {formatDate(selectedDate)}
       </h1>
-      <p className="text-xs text-muted mt-0.5">{MOCK_TODAY.phase}</p>
+      <p className="text-xs text-muted mt-0.5">{phaseName}</p>
     </div>
   )
 }
@@ -261,9 +273,9 @@ function GoalCard({ plan }: { plan: Plan }) {
 
   return (
     <Card variant="default">
-      <div className="flex items-baseline justify-between">
-        <p className="text-xs text-muted">Goal</p>
-        <p className="text-title font-semibold text-ink">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-xs text-muted flex-shrink-0">Goal</p>
+        <p className="text-title font-semibold text-ink truncate">
           {plan.goal ?? 'Fitness Goal'}
         </p>
       </div>
@@ -561,23 +573,44 @@ function RunSection() {
 }
 
 // ── 8. StreakCard + PhaseCard ──────────────────────────────────────────────
-function BottomCards() {
-  const { streak } = MOCK_TODAY
+function BottomCards({
+  streak,
+  longestStreak,
+  activePlan,
+  weekNumber,
+  phaseName,
+}: {
+  streak: number
+  longestStreak: number
+  activePlan: Plan | null | undefined
+  weekNumber: number
+  phaseName: string
+}) {
+  const totalWeeks =
+    activePlan?.start_date && activePlan?.end_date
+      ? Math.ceil(
+          (new Date(activePlan.end_date + 'T00:00:00').getTime() -
+            new Date(activePlan.start_date + 'T00:00:00').getTime()) /
+            (1000 * 60 * 60 * 24 * 7),
+        )
+      : 8
+  const phaseProgress = Math.min(100, Math.round((weekNumber / totalWeeks) * 100))
+
   return (
     <div className="flex gap-3">
       <div className="flex-1">
         <Card variant="default" className="p-4">
-          <p className="text-title font-bold text-ink">{streak.current}</p>
+          <p className="text-title font-bold text-ink">{streak}</p>
           <p className="text-xs text-muted">day streak</p>
-          <p className="text-xs text-muted mt-2">Best: {streak.longest}</p>
+          <p className="text-xs text-muted mt-2">Best: {longestStreak}</p>
         </Card>
       </div>
 
       <div className="flex-1">
         <Card variant="default" className="p-4 flex flex-col items-center">
-          <ProgressRing progress={44} size={56} strokeWidth={5} />
-          <p className="text-xs font-semibold text-ink mt-2">{MOCK_TODAY.phase}</p>
-          <p className="text-xs text-muted">Wk {MOCK_TODAY.week} of 6</p>
+          <ProgressRing progress={phaseProgress} size={56} strokeWidth={5} />
+          <p className="text-xs font-semibold text-ink mt-2">{phaseName}</p>
+          <p className="text-xs text-muted">Wk {weekNumber} of {totalWeeks}</p>
         </Card>
       </div>
     </div>
@@ -609,6 +642,9 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
   // Active plan — fetched fresh on every mount (tab switch remounts this component)
   const [activePlan, setActivePlan] = useState<Plan | null | undefined>(undefined)
 
+  // Current phase name — fetched from the next upcoming planned workout
+  const [currentPhase, setCurrentPhase] = useState('Training')
+
   useEffect(() => {
     supabase
       .from('plans')
@@ -622,9 +658,30 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
       })
   }, [user.id])
 
+  // Fetch the current phase name from the next upcoming workout
+  useEffect(() => {
+    if (!activePlan) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db = supabase as unknown as { from: (t: string) => any }
+    db
+      .from('workouts')
+      .select('phase_id, phases(name)')
+      .eq('user_id', user.id)
+      .eq('status', 'planned')
+      .gte('scheduled_date', toDateStr(new Date()))
+      .order('scheduled_date', { ascending: true })
+      .limit(1)
+      .then(({ data }: { data: Array<{ phases: { name: string } | null }> | null }) => {
+        const phaseName = data?.[0]?.phases?.name
+        if (phaseName) setCurrentPhase(phaseName)
+      })
+  }, [activePlan, user.id])
+
   useEffect(() => {
     onLogSheetChange?.(showLogSheet)
   }, [showLogSheet, onLogSheetChange])
+
+  const stats = useUserStats(user.id, refreshKey)
 
   const { workout, exercises, loading: workoutLoading } = useTodayWorkout(
     user.id,
@@ -652,9 +709,17 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
   const todayStr = toDateStr(new Date())
   const isFuture = toDateStr(selectedDate) > todayStr
 
+  const weekNumber = activePlan
+    ? getWeekNumber(activePlan.start_date ?? '2026-06-10')
+    : 1
+
   return (
     <div className="space-y-4">
-      <PageHeader selectedDate={selectedDate} />
+      <PageHeader
+        selectedDate={selectedDate}
+        weekNumber={weekNumber}
+        phaseName={currentPhase}
+      />
       <DaySelector
         weekDates={weekDates}
         selectedDate={selectedDate}
@@ -688,7 +753,14 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
       {activePlan != null && <GoalCard plan={activePlan} />}
 
       <WhoopRecoveryCard displayRecovery={displayRecovery} />
-      <BottomCards />
+
+      <BottomCards
+        streak={stats.currentStreak}
+        longestStreak={stats.longestStreak}
+        activePlan={activePlan}
+        weekNumber={weekNumber}
+        phaseName={currentPhase}
+      />
 
       {workout && (
         <LogWorkoutPage
@@ -704,7 +776,21 @@ export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
             name: displayWorkout.name,
             type: displayWorkout.type,
             exercises: displayWorkout.exercises,
-            run: MOCK_TODAY.workout.run,
+            run: (['run', 'gym_run', 'time_trial'] as string[]).includes(workout.type)
+              ? {
+                  type: workout.type,
+                  distance: workout.type === 'time_trial' ? '1km' : '3km',
+                  duration: `${workout.duration_mins ?? 30} min`,
+                  paceTarget: workout.type === 'time_trial' ? 'sub 3:30' : 'conversational',
+                }
+              : null,
+          }}
+          stats={{
+            streak: stats.currentStreak,
+            daysUntilGoal: stats.daysUntilGoal,
+            completionPct: stats.completionPct,
+            weeklyWorkouts: stats.weeklyWorkouts,
+            weeklyTarget: stats.weeklyTarget,
           }}
         />
       )}
