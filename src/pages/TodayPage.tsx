@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
@@ -8,6 +8,7 @@ import { ProgressRing } from '../components/ui/ProgressRing'
 import { useTodayWorkout } from '../hooks/useTodayWorkout'
 import { useWhoopRecovery } from '../hooks/useWhoopRecovery'
 import type { Workout, Exercise, WhoopRecovery } from '../lib/supabase'
+import { LogWorkoutPage } from './LogWorkoutPage'
 
 // ── Mock data ──────────────────────────────────────────────────────────────
 const MOCK_TODAY = {
@@ -268,7 +269,13 @@ function WhoopRecoveryCard({ displayRecovery }: { displayRecovery: DisplayRecove
 }
 
 // ── 5. WorkoutCard ─────────────────────────────────────────────────────────
-function WorkoutCard({ displayWorkout }: { displayWorkout: DisplayWorkout }) {
+function WorkoutCard({
+  displayWorkout,
+  onStart,
+}: {
+  displayWorkout: DisplayWorkout
+  onStart: () => void
+}) {
   const typeLabel = displayWorkout.type === 'gym' ? 'Gym + Run' : displayWorkout.type
 
   return (
@@ -286,7 +293,7 @@ function WorkoutCard({ displayWorkout }: { displayWorkout: DisplayWorkout }) {
         <p className="text-sm text-muted italic">{displayWorkout.coachNote}</p>
       </div>
 
-      <Button variant="primary" size="lg" className="w-full mt-5">
+      <Button variant="primary" size="lg" className="w-full mt-5" onClick={onStart}>
         Start Workout
       </Button>
     </Card>
@@ -433,10 +440,18 @@ function BottomCards() {
 // ── Page ───────────────────────────────────────────────────────────────────
 interface TodayPageProps {
   user: User
+  onLogSheetChange?: (open: boolean) => void
 }
 
-export function TodayPage({ user }: TodayPageProps) {
-  const { workout, exercises, loading: workoutLoading } = useTodayWorkout(user.id)
+export function TodayPage({ user, onLogSheetChange }: TodayPageProps) {
+  const [showLogSheet, setShowLogSheet] = useState(false)
+
+  useEffect(() => {
+    onLogSheetChange?.(showLogSheet)
+  }, [showLogSheet, onLogSheetChange])
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const { workout, exercises, loading: workoutLoading } = useTodayWorkout(user.id, refreshKey)
   const { recovery } = useWhoopRecovery(user.id)
 
   const displayWorkout: DisplayWorkout =
@@ -459,12 +474,29 @@ export function TodayPage({ user }: TodayPageProps) {
         <WorkoutSkeleton />
       ) : (
         <>
-          <WorkoutCard displayWorkout={displayWorkout} />
+          <WorkoutCard displayWorkout={displayWorkout} onStart={() => setShowLogSheet(true)} />
           <ExerciseList exercises={displayWorkout.exercises} />
           <RunSection />
         </>
       )}
       <BottomCards />
+
+      <LogWorkoutPage
+        isOpen={showLogSheet}
+        onClose={() => setShowLogSheet(false)}
+        onComplete={() => {
+          setShowLogSheet(false)
+          setRefreshKey((k) => k + 1)
+        }}
+        user={user}
+        workout={{
+          id: workout?.id ?? 'demo',
+          name: displayWorkout.name,
+          type: displayWorkout.type,
+          exercises: displayWorkout.exercises,
+          run: displayWorkout.run ?? null,
+        }}
+      />
     </div>
   )
 }

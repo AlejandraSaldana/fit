@@ -11,7 +11,7 @@ function toDateString(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-export function useTodayWorkout(userId: string) {
+export function useTodayWorkout(userId: string, refreshKey?: number) {
   const [workout, setWorkout] = useState<Workout | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,7 +56,7 @@ export function useTodayWorkout(userId: string) {
 
     load()
     return () => { mounted = false }
-  }, [userId])
+  }, [userId, refreshKey])
 
   return { workout, exercises, loading, error }
 }
